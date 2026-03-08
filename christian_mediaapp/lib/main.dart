@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
+import 'services/auth_service.dart';
+import 'services/post_service.dart';
+import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/edit_profile_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AuthService.instance.init();
+  await PostService.instance.init();
   runApp(const FaithConnectApp());
 }
 
@@ -38,10 +47,14 @@ class FaithConnectApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
         ),
-        iconTheme: const IconThemeData(
-          color: Color(0xFF5C5C5C),
-        ),
+        iconTheme: const IconThemeData(color: Color(0xFF5C5C5C)),
       ),
+      routes: {
+        '/login': (_) => const LoginScreen(),
+        '/register': (_) => const RegisterScreen(),
+        '/profile': (_) => const ProfileScreen(),
+        '/edit_profile': (_) => const EditProfileScreen(),
+      },
       home: const HomePage(),
     );
   }
@@ -53,45 +66,50 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.pushNamed(context, '/login'),
+        child: const Icon(Icons.person),
+        tooltip: 'Login / Register',
+      ),
       body: SingleChildScrollView(
         child: Column(
           children: [
             // TOP APP BAR
             const TopAppBarSection(),
-            
+
             // DAILY VERSE SECTION
             const DailyVerseSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // CREATE POST SECTION
             const CreatePostSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // FEED POSTS SECTION
             FeedPostsSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // REELS PREVIEW SECTION
             const ReelsPreviewSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // MARKETPLACE PREVIEW SECTION
             const MarketplacePreviewSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // MUSIC SECTION
             const MusicSection(),
-            
+
             const SizedBox(height: 16),
-            
+
             // PROFILE PREVIEW SECTION
             const ProfilePreviewSection(),
-            
+
             const SizedBox(height: 80), // Space for bottom nav
           ],
         ),
@@ -132,11 +150,7 @@ class TopAppBarSection extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(
-              Icons.add,
-              color: Colors.white,
-              size: 24,
-            ),
+            child: const Icon(Icons.add, color: Colors.white, size: 24),
           ),
           const SizedBox(width: 12),
           // App Name
@@ -151,19 +165,21 @@ class TopAppBarSection extends StatelessWidget {
           ),
           const Spacer(),
           // Icons
-          _buildIconButton(Icons.search),
-          _buildIconButton(Icons.notifications_outlined),
-          _buildIconButton(Icons.message_outlined),
+          _buildIconButton(context, Icons.search),
+          _buildIconButton(context, Icons.notifications_outlined),
+          _buildIconButton(context, Icons.message_outlined),
         ],
       ),
     );
   }
 
-  Widget _buildIconButton(IconData icon) {
+  Widget _buildIconButton(BuildContext context, IconData icon) {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       child: IconButton(
-        onPressed: null,
+        onPressed: icon == Icons.message_outlined
+            ? () => Navigator.pushNamed(context, '/login')
+            : null,
         icon: Icon(icon, size: 24),
         style: IconButton.styleFrom(
           backgroundColor: const Color(0xFFF5F5F5),
@@ -338,10 +354,7 @@ class CreatePostSection extends StatelessWidget {
             height: 50,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFFD4AF37),
-                width: 2,
-              ),
+              border: Border.all(color: const Color(0xFFD4AF37), width: 2),
               image: const DecorationImage(
                 image: AssetImage('../Profile.jpg'),
                 fit: BoxFit.cover,
@@ -359,10 +372,7 @@ class CreatePostSection extends StatelessWidget {
               ),
               child: const Text(
                 'Share your testimony...',
-                style: TextStyle(
-                  color: Color(0xFF999999),
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: Color(0xFF999999), fontSize: 15),
               ),
             ),
           ),
@@ -413,11 +423,7 @@ class CreatePostIconsRow extends StatelessWidget {
             color: const Color(0xFFF5E6B3).withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(
-            icon,
-            color: const Color(0xFFD4AF37),
-            size: 24,
-          ),
+          child: Icon(icon, color: const Color(0xFFD4AF37), size: 24),
         ),
         const SizedBox(height: 4),
         Text(
@@ -443,28 +449,29 @@ class FeedPostsSection extends StatelessWidget {
     {
       'name': 'Denmar Curtivo',
       'time': '2 hours ago',
-      'content': 'Had an amazing worship session this morning! God\'s presence was so real in the room. 🙏✨ #worship #faith #blessed',
+      'content':
+          'Had an amazing worship session this morning! God\'s presence was so real in the room. 🙏✨ #worship #faith #blessed',
       'profileColor': const Color(0xFFE8D5B7),
     },
     {
       'name': 'Ps. Peter Tanchi',
       'time': '4 hours ago',
-      'content': 'Remember, God has not given us a spirit of fear, but of power, love, and a sound mind. - 2 Timothy 1:7',
+      'content':
+          'Remember, God has not given us a spirit of fear, but of power, love, and a sound mind. - 2 Timothy 1:7',
       'profileColor': const Color(0xFFD4C4A8),
     },
     {
       'name': 'Mharc Cardenas',
       'time': '6 hours ago',
-      'content': 'Join us this Sunday for a powerful message on "Walking in Faith". Stream live at 10 AM!',
+      'content':
+          'Join us this Sunday for a powerful message on "Walking in Faith". Stream live at 10 AM!',
       'profileColor': const Color(0xFFC9B896),
     },
   ];
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: posts.map((post) => PostCard(post: post)).toList(),
-    );
+    return Column(children: posts.map((post) => PostCard(post: post)).toList());
   }
 }
 
@@ -503,10 +510,7 @@ class PostCard extends StatelessWidget {
                   color: post['profileColor'] as Color,
                   borderRadius: BorderRadius.circular(22),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.person, color: Colors.white),
               ),
               const SizedBox(width: 12),
               // Name and Time
@@ -556,7 +560,11 @@ class PostCard extends StatelessWidget {
               const SizedBox(width: 16),
               _buildReaction(Icons.pan_tool, 'Pray', const Color(0xFF8B9DC3)),
               const SizedBox(width: 16),
-              _buildReaction(Icons.music_note, 'Worship', const Color(0xFF9ACD32)),
+              _buildReaction(
+                Icons.music_note,
+                'Worship',
+                const Color(0xFF9ACD32),
+              ),
               const SizedBox(width: 16),
               _buildReaction(Icons.favorite, 'Love', const Color(0xFFE57373)),
             ],
@@ -661,8 +669,14 @@ class ReelsPreviewSection extends StatelessWidget {
       const Color(0xFFC9B896),
       const Color(0xFFDEC9A3),
     ];
-    
-    final names = ['@sarah_worship', '@pastor_john', '@grace_ministries', '@faith_talks', '@bible_study'];
+
+    final names = [
+      '@sarah_worship',
+      '@pastor_john',
+      '@grace_ministries',
+      '@faith_talks',
+      '@bible_study',
+    ];
 
     return Container(
       width: 120,
@@ -699,12 +713,7 @@ class ReelsPreviewSection extends StatelessWidget {
                 color: Colors.white,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                shadows: [
-                  Shadow(
-                    color: Colors.black45,
-                    blurRadius: 4,
-                  ),
-                ],
+                shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -766,10 +775,26 @@ class MarketplacePreviewSection extends StatelessWidget {
             mainAxisSpacing: 12,
             childAspectRatio: 0.75,
             children: [
-              _buildProductCard('Christian T-Shirt', '₱150.00', 'assets/Christian T-shrit.webp'),
-              _buildProductCard('Bible Cover', '₱200.00', 'assets/Bible cover.jpg'),
-              _buildProductCard('Worship Journal', '₱179.00', 'assets/worship journal.webp'),
-              _buildProductCard('Prayer Beads', '₱100.00', 'assets/prayerbeeds.webp'),
+              _buildProductCard(
+                'Christian T-Shirt',
+                '₱150.00',
+                'assets/Christian T-shrit.webp',
+              ),
+              _buildProductCard(
+                'Bible Cover',
+                '₱200.00',
+                'assets/Bible cover.jpg',
+              ),
+              _buildProductCard(
+                'Worship Journal',
+                '₱179.00',
+                'assets/worship journal.webp',
+              ),
+              _buildProductCard(
+                'Prayer Beads',
+                '₱100.00',
+                'assets/prayerbeeds.webp',
+              ),
             ],
           ),
         ),
@@ -797,7 +822,9 @@ class MarketplacePreviewSection extends StatelessWidget {
           Container(
             height: 100,
             decoration: BoxDecoration(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
               image: DecorationImage(
                 image: AssetImage(imagePath),
                 fit: BoxFit.cover,
@@ -912,7 +939,7 @@ class MusicSection extends StatelessWidget {
       'Hillsong Worship',
       'Bryan & Katie Torwalt',
     ];
-    
+
     final colors = [
       const Color(0xFFD4AF37),
       const Color(0xFFC9B896),
@@ -943,16 +970,14 @@ class MusicSection extends StatelessWidget {
             height: 100,
             decoration: BoxDecoration(
               color: colors[index % colors.length],
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
             ),
             child: Stack(
               children: [
                 const Center(
-                  child: Icon(
-                    Icons.album,
-                    size: 50,
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.album, size: 50, color: Colors.white),
                 ),
                 Positioned(
                   bottom: 8,
@@ -1049,11 +1074,7 @@ class ProfilePreviewSection extends StatelessWidget {
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: const Center(
-              child: Icon(
-                Icons.landscape,
-                size: 40,
-                color: Colors.white,
-              ),
+              child: Icon(Icons.landscape, size: 40, color: Colors.white),
             ),
           ),
           // Profile Info
@@ -1173,10 +1194,7 @@ class _StatColumn extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Color(0xFF888888),
-          ),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
         ),
       ],
     );
@@ -1208,12 +1226,17 @@ class BottomNavBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildNavItem(Icons.home, 'Home', true),
-              _buildNavItem(Icons.play_circle_outline, 'Reels', false),
-              _buildNavItem(Icons.auto_stories, 'Verse', false),
-              _buildNavItem(Icons.storefront_outlined, 'Market', false),
-              _buildNavItem(Icons.music_note_outlined, 'Music', false),
-              _buildNavItem(Icons.person_outline, 'Profile', false),
+              _buildNavItem(context, Icons.home, 'Home', true),
+              _buildNavItem(context, Icons.play_circle_outline, 'Reels', false),
+              _buildNavItem(context, Icons.auto_stories, 'Verse', false),
+              _buildNavItem(
+                context,
+                Icons.storefront_outlined,
+                'Market',
+                false,
+              ),
+              _buildNavItem(context, Icons.music_note_outlined, 'Music', false),
+              _buildNavItem(context, Icons.person_outline, 'Profile', false),
             ],
           ),
         ),
@@ -1221,34 +1244,54 @@ class BottomNavBar extends StatelessWidget {
     );
   }
 
-  Widget _buildNavItem(IconData icon, String label, bool isActive) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isActive
-                ? const Color(0xFFD4AF37).withValues(alpha: 0.15)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            size: 24,
-            color: isActive ? const Color(0xFFD4AF37) : const Color(0xFF888888),
-          ),
+  Widget _buildNavItem(
+    BuildContext context,
+    IconData icon,
+    String label,
+    bool isActive,
+  ) {
+    return InkWell(
+      onTap: () {
+        if (label == 'Profile') {
+          Navigator.pushNamed(context, '/profile');
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? const Color(0xFFD4AF37).withValues(alpha: 0.15)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                icon,
+                size: 24,
+                color: isActive
+                    ? const Color(0xFFD4AF37)
+                    : const Color(0xFF888888),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                color: isActive
+                    ? const Color(0xFFD4AF37)
+                    : const Color(0xFF888888),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-            color: isActive ? const Color(0xFFD4AF37) : const Color(0xFF888888),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
