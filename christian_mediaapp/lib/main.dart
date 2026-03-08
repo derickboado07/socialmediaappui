@@ -1,15 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/post_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/edit_profile_screen.dart';
+import 'screens/create_post_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AuthService.instance.init();
-  await PostService.instance.init();
+  bool _firebaseOk = false;
+  try {
+    // Try to initialize Firebase with generated options where available.
+    FirebaseOptions? options;
+    try {
+      options = DefaultFirebaseOptions.currentPlatform;
+    } on UnsupportedError catch (e) {
+      // Default options not configured for this platform.
+      // ignore: avoid_print
+      print('DefaultFirebaseOptions not configured: $e');
+      options = null;
+    }
+    if (options != null) {
+      // Log minimal option info for debugging
+      // ignore: avoid_print
+      print(
+        'Firebase options found for platform. projectId=${options.projectId} appId=${options.appId}',
+      );
+      await Firebase.initializeApp(options: options);
+      // ignore: avoid_print
+      print('Firebase.initializeApp succeeded');
+      _firebaseOk = true;
+    } else {
+      // If no options are available, avoid calling initializeApp without config
+      // because that yields configuration-not-found on some platforms.
+      // ignore: avoid_print
+      print(
+        'Skipping Firebase.initializeApp: no DefaultFirebaseOptions for this platform.',
+      );
+      _firebaseOk = false;
+    }
+  } catch (e) {
+    // Initialization failed. Continue without Firebase so UI can load.
+    // ignore: avoid_print
+    print('Firebase initialization failed: $e');
+    _firebaseOk = false;
+  }
+
+  if (_firebaseOk) {
+    await AuthService.instance.init();
+    await PostService.instance.init();
+  }
   runApp(const FaithConnectApp());
 }
 
@@ -54,67 +97,98 @@ class FaithConnectApp extends StatelessWidget {
         '/register': (_) => const RegisterScreen(),
         '/profile': (_) => const ProfileScreen(),
         '/edit_profile': (_) => const EditProfileScreen(),
+        '/create_post': (_) => const CreatePostScreen(),
       },
-      home: const HomePage(),
+      home: ValueListenableBuilder(
+        valueListenable: AuthService.instance.currentUser,
+        builder: (context, value, _) {
+          if (value == null) return const LoginScreen();
+          return const HomePage();
+        },
+      ),
     );
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int _selectedIndex = 0;
+
+  Widget _buildFeed() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // TOP APP BAR
+          const TopAppBarSection(),
+
+          // DAILY VERSE SECTION
+          const DailyVerseSection(),
+
+          const SizedBox(height: 16),
+
+          // CREATE POST SECTION
+          const CreatePostSection(),
+
+          const SizedBox(height: 16),
+
+          // FEED POSTS SECTION
+          const FeedPostsSection(),
+
+          const SizedBox(height: 16),
+
+          // REELS PREVIEW SECTION
+          const ReelsPreviewSection(),
+
+          const SizedBox(height: 16),
+
+          // MARKETPLACE PREVIEW SECTION
+          const MarketplacePreviewSection(),
+
+          const SizedBox(height: 16),
+
+          // MUSIC SECTION
+          const MusicSection(),
+
+          const SizedBox(height: 16),
+
+          // PROFILE PREVIEW SECTION
+          const ProfilePreviewSection(),
+
+          const SizedBox(height: 80), // Space for bottom nav
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[
+      _buildFeed(),
+      // placeholders for Reels, Verse, Market, Music
+      const Center(child: Text('Reels')),
+      const Center(child: Text('Verse')),
+      const Center(child: Text('Market')),
+      const Center(child: Text('Music')),
+      const ProfileScreen(),
+    ];
+
     return Scaffold(
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.pushNamed(context, '/login'),
         child: const Icon(Icons.person),
         tooltip: 'Login / Register',
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // TOP APP BAR
-            const TopAppBarSection(),
-
-            // DAILY VERSE SECTION
-            const DailyVerseSection(),
-
-            const SizedBox(height: 16),
-
-            // CREATE POST SECTION
-            const CreatePostSection(),
-
-            const SizedBox(height: 16),
-
-            // FEED POSTS SECTION
-            FeedPostsSection(),
-
-            const SizedBox(height: 16),
-
-            // REELS PREVIEW SECTION
-            const ReelsPreviewSection(),
-
-            const SizedBox(height: 16),
-
-            // MARKETPLACE PREVIEW SECTION
-            const MarketplacePreviewSection(),
-
-            const SizedBox(height: 16),
-
-            // MUSIC SECTION
-            const MusicSection(),
-
-            const SizedBox(height: 16),
-
-            // PROFILE PREVIEW SECTION
-            const ProfilePreviewSection(),
-
-            const SizedBox(height: 80), // Space for bottom nav
-          ],
-        ),
+      body: pages[_selectedIndex],
+      bottomNavigationBar: BottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: (i) => setState(() => _selectedIndex = i),
       ),
-      bottomNavigationBar: const BottomNavBar(),
     );
   }
 }
@@ -332,51 +406,93 @@ class CreatePostSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Profile Picture with user's image
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFD4AF37), width: 2),
-              image: const DecorationImage(
-                image: AssetImage('../Profile.jpg'),
-                fit: BoxFit.cover,
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/create_post'),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Profile Avatar
+            ValueListenableBuilder(
+              valueListenable: AuthService.instance.currentUser,
+              builder: (_, user, __) {
+                return Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFE8D5B7), Color(0xFFD4C4A8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    border: Border.all(
+                      color: const Color(0xFFD4AF37),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: user?.avatarUrl.isNotEmpty == true
+                      ? ClipOval(
+                          child: Image.network(
+                            user!.avatarUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.person, color: Colors.white, size: 24),
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            // Placeholder text
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 13,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F8F8),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFEEEEEE)),
+                ),
+                child: const Text(
+                  'Share your testimony...',
+                  style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 14.5),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          // Text Field Placeholder
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8F8F8),
-                borderRadius: BorderRadius.circular(25),
+                color: const Color(0xFFD4AF37).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                'Share your testimony...',
-                style: TextStyle(color: Color(0xFF999999), fontSize: 15),
+              child: const Icon(
+                Icons.photo_camera_outlined,
+                color: Color(0xFFD4AF37),
+                size: 20,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -440,185 +556,982 @@ class CreatePostIconsRow extends StatelessWidget {
 }
 
 // ============================================
+// REACTION DATA
+// ============================================
+class _ReactionInfo {
+  final String key;
+  final String label;
+  final IconData icon;
+  final Color color;
+  const _ReactionInfo(this.key, this.label, this.icon, this.color);
+}
+
+const List<_ReactionInfo> _reactions = [
+  _ReactionInfo('amen', 'Amen', Icons.thumb_up, Color(0xFFD4AF37)),
+  _ReactionInfo('pray', 'Pray', Icons.pan_tool, Color(0xFF8B9DC3)),
+  _ReactionInfo('worship', 'Worship', Icons.music_note, Color(0xFF9ACD32)),
+  _ReactionInfo('love', 'Love', Icons.favorite, Color(0xFFE57373)),
+];
+
+// ============================================
 // FEED POSTS SECTION
 // ============================================
-class FeedPostsSection extends StatelessWidget {
-  FeedPostsSection({super.key});
+class FeedPostsSection extends StatefulWidget {
+  const FeedPostsSection({super.key});
 
-  final List<Map<String, dynamic>> posts = [
-    {
-      'name': 'Denmar Curtivo',
-      'time': '2 hours ago',
-      'content':
-          'Had an amazing worship session this morning! God\'s presence was so real in the room. 🙏✨ #worship #faith #blessed',
-      'profileColor': const Color(0xFFE8D5B7),
-    },
-    {
-      'name': 'Ps. Peter Tanchi',
-      'time': '4 hours ago',
-      'content':
-          'Remember, God has not given us a spirit of fear, but of power, love, and a sound mind. - 2 Timothy 1:7',
-      'profileColor': const Color(0xFFD4C4A8),
-    },
-    {
-      'name': 'Mharc Cardenas',
-      'time': '6 hours ago',
-      'content':
-          'Join us this Sunday for a powerful message on "Walking in Faith". Stream live at 10 AM!',
-      'profileColor': const Color(0xFFC9B896),
-    },
-  ];
+  @override
+  State<FeedPostsSection> createState() => _FeedPostsSectionState();
+}
+
+class _FeedPostsSectionState extends State<FeedPostsSection> {
+  List<Post> _posts = [];
+  bool _loading = true;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPosts();
+  }
+
+  Future<void> _loadPosts() async {
+    if (!mounted) return;
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final posts = await PostService.instance.fetchFeed();
+      if (mounted)
+        setState(() {
+          _posts = posts;
+          _loading = false;
+        });
+    } catch (e) {
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = true;
+        });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: posts.map((post) => PostCard(post: post)).toList());
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFFD4AF37),
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    if (_error) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_outlined,
+                size: 48,
+                color: Color(0xFFCCCCCC),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Could not load posts',
+                style: TextStyle(color: Color(0xFF888888), fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _loadPosts,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFD4AF37),
+                ),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_posts.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 70,
+                height: 70,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5E6B3).withValues(alpha: 0.4),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.article_outlined,
+                  size: 36,
+                  color: Color(0xFFD4AF37),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No posts yet',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF444444),
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Be the first to share your testimony!',
+                style: TextStyle(color: Color(0xFF888888), fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: _posts
+          .map((post) => PostCard(post: post, onRefresh: _loadPosts))
+          .toList(),
+    );
   }
 }
 
-class PostCard extends StatelessWidget {
-  final Map<String, dynamic> post;
+// ============================================
+// POST CARD
+// ============================================
+class PostCard extends StatefulWidget {
+  final Post post;
+  final VoidCallback onRefresh;
 
-  const PostCard({super.key, required this.post});
+  const PostCard({super.key, required this.post, required this.onRefresh});
+
+  @override
+  State<PostCard> createState() => _PostCardState();
+}
+
+class _PostCardState extends State<PostCard> {
+  bool _showReactionPicker = false;
+  bool _busy = false;
+  bool _saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedState();
+  }
+
+  Future<void> _loadSavedState() async {
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) return;
+    try {
+      final saved = await PostService.instance.isSaved(widget.post.id, user.id);
+      if (mounted) setState(() => _saved = saved);
+    } catch (_) {}
+  }
+
+  String? get _myReaction {
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) return null;
+    for (final entry in widget.post.reactions.entries) {
+      if (entry.value.contains(user.id)) return entry.key;
+    }
+    return null;
+  }
+
+  int get _totalReactions {
+    int total = 0;
+    for (final v in widget.post.reactions.values) {
+      total += v.length;
+    }
+    return total;
+  }
+
+  String _formatTimestamp(String ts) {
+    try {
+      final dt = DateTime.parse(ts);
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return ts;
+    }
+  }
+
+  Future<void> _react(String key) async {
+    if (_busy) return;
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to react'),
+          backgroundColor: Color(0xFFD4AF37),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _showReactionPicker = false;
+    });
+    try {
+      await PostService.instance.toggleReaction(widget.post.id, key, user.id);
+      widget.onRefresh();
+    } catch (_) {}
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _toggleSave() async {
+    if (_busy) return;
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) return;
+    setState(() {
+      _busy = true;
+      _saved = !_saved;
+    });
+    try {
+      await PostService.instance.toggleSave(widget.post.id, user.id);
+    } catch (_) {
+      if (mounted) setState(() => _saved = !_saved);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  void _openComments() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) =>
+          CommentsSheet(post: widget.post, onCommentAdded: widget.onRefresh),
+    );
+  }
+
+  void _share() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Post link copied to clipboard'),
+          ],
+        ),
+        backgroundColor: const Color(0xFFD4AF37),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              // Profile Picture
-              Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: post['profileColor'] as Color,
-                  borderRadius: BorderRadius.circular(22),
-                ),
-                child: const Icon(Icons.person, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              // Name and Time
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      post['name'] as String,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: Color(0xFF333333),
+    final myReaction = _myReaction;
+    final totalReactions = _totalReactions;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        if (_showReactionPicker) setState(() => _showReactionPicker = false);
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withValues(alpha: 0.1),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ──────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 6, 0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8D5B7), Color(0xFFD4C4A8)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFD4AF37).withValues(alpha: 0.35),
+                        width: 1.5,
                       ),
                     ),
+                    child: const Icon(
+                      Icons.person,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.post.authorEmail.contains('@')
+                              ? widget.post.authorEmail.split('@').first
+                              : widget.post.authorEmail,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.5,
+                            color: Color(0xFF2C2C2C),
+                          ),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          _formatTimestamp(widget.post.timestamp),
+                          style: const TextStyle(
+                            color: Color(0xFF999999),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.more_horiz,
+                      color: Color(0xFFAAAAAA),
+                    ),
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Content ─────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: Text(
+                widget.post.content,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  height: 1.55,
+                  color: Color(0xFF3A3A3A),
+                ),
+              ),
+            ),
+
+            // ── Media ───────────────────────────────
+            if (widget.post.mediaUrl != null &&
+                widget.post.mediaUrl!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.zero,
+                  child: Image.network(
+                    widget.post.mediaUrl!,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+
+            // ── Reaction Summary ─────────────────────
+            if (totalReactions > 0 || widget.post.comments.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: [
+                    if (totalReactions > 0) ...[
+                      ...widget.post.reactions.entries
+                          .where((e) => e.value.isNotEmpty)
+                          .take(3)
+                          .map((entry) {
+                            final rd = _reactions.firstWhere(
+                              (r) => r.key == entry.key,
+                              orElse: () => _reactions[0],
+                            );
+                            return Container(
+                              margin: const EdgeInsets.only(right: 1),
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                color: rd.color.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(rd.icon, size: 12, color: rd.color),
+                            );
+                          }),
+                      const SizedBox(width: 5),
+                      Text(
+                        '$totalReactions',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF888888),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    if (widget.post.comments.isNotEmpty)
+                      Text(
+                        '${widget.post.comments.length} comment${widget.post.comments.length != 1 ? 's' : ''}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF888888),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+            // ── Divider ──────────────────────────────
+            const Padding(
+              padding: EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: Divider(
+                height: 1,
+                thickness: 0.8,
+                color: Color(0xFFEEEEEE),
+              ),
+            ),
+
+            // ── Reaction picker + Action row ─────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Reaction picker (slides in above actions)
+                  if (_showReactionPicker)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+                      child: _ReactionPickerBubble(
+                        myReaction: myReaction,
+                        onReact: _react,
+                      ),
+                    ),
+                  // Actions row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _ReactButton(
+                        myReaction: myReaction,
+                        onTap: () => setState(
+                          () => _showReactionPicker = !_showReactionPicker,
+                        ),
+                      ),
+                      _ActionButton(
+                        icon: Icons.chat_bubble_outline_rounded,
+                        label: 'Comment',
+                        onTap: _openComments,
+                      ),
+                      _ActionButton(
+                        icon: Icons.share_outlined,
+                        label: 'Share',
+                        onTap: _share,
+                      ),
+                      _ActionButton(
+                        icon: _saved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        label: 'Save',
+                        color: _saved ? const Color(0xFFD4AF37) : null,
+                        onTap: _toggleSave,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── React Button ─────────────────────────────────────────────────────────────
+class _ReactButton extends StatelessWidget {
+  final String? myReaction;
+  final VoidCallback onTap;
+
+  const _ReactButton({required this.myReaction, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = myReaction != null
+        ? _reactions.firstWhere(
+            (r) => r.key == myReaction,
+            orElse: () => _reactions[0],
+          )
+        : null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              active?.icon ?? Icons.thumb_up_outlined,
+              size: 19,
+              color: active?.color ?? const Color(0xFF888888),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              active?.label ?? 'React',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: active != null ? FontWeight.w600 : FontWeight.w500,
+                color: active?.color ?? const Color(0xFF888888),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Generic Action Button ─────────────────────────────────────────────────────
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? const Color(0xFF888888);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 19, color: c),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: c,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Reaction Picker Bubble ───────────────────────────────────────────────────
+class _ReactionPickerBubble extends StatelessWidget {
+  final String? myReaction;
+  final ValueChanged<String> onReact;
+
+  const _ReactionPickerBubble({
+    required this.myReaction,
+    required this.onReact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(40),
+      shadowColor: Colors.black.withValues(alpha: 0.15),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: _reactions.map((r) {
+            final isActive = myReaction == r.key;
+            return GestureDetector(
+              onTap: () => onReact(r.key),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? r.color.withValues(alpha: 0.15)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(24),
+                  border: isActive
+                      ? Border.all(color: r.color.withValues(alpha: 0.4))
+                      : null,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(r.icon, size: 24, color: r.color),
+                    const SizedBox(height: 3),
                     Text(
-                      post['time'] as String,
-                      style: const TextStyle(
-                        color: Color(0xFF999999),
-                        fontSize: 12,
+                      r.label,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: r.color,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: null,
-                icon: const Icon(Icons.more_horiz, color: Color(0xFF999999)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Content
-          Text(
-            post['content'] as String,
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.5,
-              color: Color(0xFF444444),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Christian Reactions
-          Row(
-            children: [
-              _buildReaction(Icons.thumb_up, 'Amen', const Color(0xFFD4AF37)),
-              const SizedBox(width: 16),
-              _buildReaction(Icons.pan_tool, 'Pray', const Color(0xFF8B9DC3)),
-              const SizedBox(width: 16),
-              _buildReaction(
-                Icons.music_note,
-                'Worship',
-                const Color(0xFF9ACD32),
-              ),
-              const SizedBox(width: 16),
-              _buildReaction(Icons.favorite, 'Love', const Color(0xFFE57373)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          // Action Buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildActionButton(Icons.chat_bubble_outline, 'Comment'),
-              _buildActionButton(Icons.share_outlined, 'Share'),
-              _buildActionButton(Icons.bookmark_border, 'Save'),
-            ],
-          ),
-        ],
+            );
+          }).toList(),
+        ),
       ),
     );
   }
+}
 
-  Widget _buildReaction(IconData icon, String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: color,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
+// ─── Comments Bottom Sheet ────────────────────────────────────────────────────
+class CommentsSheet extends StatefulWidget {
+  final Post post;
+  final VoidCallback onCommentAdded;
+
+  const CommentsSheet({
+    super.key,
+    required this.post,
+    required this.onCommentAdded,
+  });
+
+  @override
+  State<CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<CommentsSheet> {
+  final TextEditingController _ctrl = TextEditingController();
+  bool _submitting = false;
+  List<Comment> _comments = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _comments = List.from(widget.post.comments);
   }
 
-  Widget _buildActionButton(IconData icon, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 20, color: const Color(0xFF888888)),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            color: Color(0xFF888888),
-            fontWeight: FontWeight.w500,
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please log in to comment')));
+      return;
+    }
+    setState(() => _submitting = true);
+    _ctrl.clear();
+    try {
+      await PostService.instance.addComment(
+        widget.post.id,
+        user.id,
+        user.email,
+        text,
+      );
+      widget.onCommentAdded();
+      final updated = await PostService.instance.getById(widget.post.id);
+      if (mounted && updated != null)
+        setState(() => _comments = updated.comments);
+    } catch (_) {}
+    if (mounted) setState(() => _submitting = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.72,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 4),
+            width: 38,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDDDDDD),
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-        ),
-      ],
+          // Title
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                const Text(
+                  'Comments',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2C2C2C),
+                  ),
+                ),
+                const Spacer(),
+                if (_comments.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5E6B3).withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_comments.length}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFD4AF37),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+          // Comments list
+          Expanded(
+            child: _comments.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 48,
+                          color: Color(0xFFDDDDDD),
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'No comments yet',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Color(0xFF888888),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Be the first to comment!',
+                          style: TextStyle(
+                            color: Color(0xFFAAAAAA),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    itemCount: _comments.length,
+                    itemBuilder: (_, i) {
+                      final c = _comments[i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Color(0xFFE8D5B7),
+                                    Color(0xFFD4C4A8),
+                                  ],
+                                ),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  8,
+                                  12,
+                                  10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8F8F8),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      c.author.contains('@')
+                                          ? c.author.split('@').first
+                                          : c.author,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: Color(0xFF2C2C2C),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      c.text,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        color: Color(0xFF444444),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          // Input
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+          Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + bottomInset),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFE8D5B7), Color(0xFFD4C4A8)],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submit(),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF2C2C2C),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Write a comment...',
+                      hintStyle: const TextStyle(
+                        color: Color(0xFFAAAAAA),
+                        fontSize: 14,
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: const Color(0xFFF4F4F4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _submitting
+                    ? const SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFD4AF37),
+                        ),
+                      )
+                    : GestureDetector(
+                        onTap: _submit,
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFFD4AF37), Color(0xFFE8C95A)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.send_rounded,
+                            color: Colors.white,
+                            size: 17,
+                          ),
+                        ),
+                      ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1205,7 +2118,10 @@ class _StatColumn extends StatelessWidget {
 // BOTTOM NAVIGATION BAR
 // ============================================
 class BottomNavBar extends StatelessWidget {
-  const BottomNavBar({super.key});
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  const BottomNavBar({super.key, this.currentIndex = 0, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1226,17 +2142,12 @@ class BottomNavBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildNavItem(context, Icons.home, 'Home', true),
-              _buildNavItem(context, Icons.play_circle_outline, 'Reels', false),
-              _buildNavItem(context, Icons.auto_stories, 'Verse', false),
-              _buildNavItem(
-                context,
-                Icons.storefront_outlined,
-                'Market',
-                false,
-              ),
-              _buildNavItem(context, Icons.music_note_outlined, 'Music', false),
-              _buildNavItem(context, Icons.person_outline, 'Profile', false),
+              _buildNavItem(context, Icons.home, 'Home', 0),
+              _buildNavItem(context, Icons.play_circle_outline, 'Reels', 1),
+              _buildNavItem(context, Icons.auto_stories, 'Verse', 2),
+              _buildNavItem(context, Icons.storefront_outlined, 'Market', 3),
+              _buildNavItem(context, Icons.music_note_outlined, 'Music', 4),
+              _buildNavItem(context, Icons.person_outline, 'Profile', 5),
             ],
           ),
         ),
@@ -1248,14 +2159,11 @@ class BottomNavBar extends StatelessWidget {
     BuildContext context,
     IconData icon,
     String label,
-    bool isActive,
+    int idx,
   ) {
+    final isActive = idx == currentIndex;
     return InkWell(
-      onTap: () {
-        if (label == 'Profile') {
-          Navigator.pushNamed(context, '/profile');
-        }
-      },
+      onTap: () => onTap(idx),
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

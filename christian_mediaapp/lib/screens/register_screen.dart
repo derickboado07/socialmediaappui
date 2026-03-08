@@ -34,7 +34,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    final ok = await AuthService.instance.register(
+    final err = await AuthService.instance.register(
       email: _emailCtrl.text.trim(),
       password: _pwCtrl.text,
       name: _nameCtrl.text.trim(),
@@ -45,16 +45,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
           : null,
     );
     setState(() => _loading = false);
-    if (ok) {
+    if (err == null) {
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/profile');
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Registration failed. Email may be in use.'),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
     }
   }
 

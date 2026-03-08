@@ -24,18 +24,22 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    final ok = await AuthService.instance.login(
+    final error = await AuthService.instance.login(
       email: _emailCtrl.text.trim(),
       password: _pwCtrl.text,
     );
     setState(() => _loading = false);
-    if (ok) {
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/profile');
+    if (!mounted) return;
+    if (error == null) {
+      // Replace current route with the app's home route so bottom nav is visible
+      Navigator.pushReplacementNamed(context, '/');
     } else {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login failed. Check credentials.')),
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 4),
+        ),
       );
     }
   }

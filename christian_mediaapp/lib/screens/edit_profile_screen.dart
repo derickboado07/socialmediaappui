@@ -36,7 +36,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _selectedDob = DateTime.parse(user.dob!);
         } catch (_) {}
       }
-      _avatarPath = user.avatarPath;
+      _avatarPath = user.avatarUrl;
     }
   }
 
@@ -92,12 +92,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 : '?',
                           )
                         : ClipOval(
-                            child: Image.file(
-                              File(_avatarPath),
-                              width: 72,
-                              height: 72,
-                              fit: BoxFit.cover,
-                            ),
+                            child: _avatarPath.startsWith('http')
+                                ? Image.network(
+                                    _avatarPath,
+                                    width: 72,
+                                    height: 72,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.file(
+                                    File(_avatarPath),
+                                    width: 72,
+                                    height: 72,
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
                   ),
                   const SizedBox(width: 12),
@@ -141,7 +148,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         imageQuality: 85,
                       );
                       if (picked == null) return;
-                      setState(() => _avatarPath = picked.path ?? '');
+                      setState(() => _avatarPath = picked.path);
                     },
                     child: const Text('Change Avatar'),
                   ),

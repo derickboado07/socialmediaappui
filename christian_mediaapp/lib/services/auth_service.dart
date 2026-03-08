@@ -1,7 +1,8 @@
-import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:crypto/crypto.dart' as crypto;
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class AuthUser {
   final String id;
@@ -11,7 +12,7 @@ class AuthUser {
   final String phone;
   final String gender;
   final String? dob; // ISO date string (YYYY-MM-DD)
-  final String avatarPath;
+  final String avatarUrl;
 
   AuthUser({
     required this.id,
@@ -21,7 +22,7 @@ class AuthUser {
     this.phone = '',
     this.gender = '',
     this.dob,
-    this.avatarPath = '',
+    this.avatarUrl = '',
   });
 
   AuthUser copyWith({
@@ -30,7 +31,7 @@ class AuthUser {
     String? phone,
     String? gender,
     String? dob,
-    String? avatarPath,
+    String? avatarUrl,
   }) {
     return AuthUser(
       id: id,
@@ -40,7 +41,7 @@ class AuthUser {
       phone: phone ?? this.phone,
       gender: gender ?? this.gender,
       dob: dob ?? this.dob,
-      avatarPath: avatarPath ?? this.avatarPath,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
     );
   }
 
@@ -52,7 +53,7 @@ class AuthUser {
     'phone': phone,
     'gender': gender,
     'dob': dob,
-    'avatar': avatarPath,
+    'avatar': avatarUrl,
   };
 
   static AuthUser fromJson(Map<String, dynamic> j) => AuthUser(
@@ -63,7 +64,7 @@ class AuthUser {
     phone: j['phone'] ?? '',
     gender: j['gender'] ?? '',
     dob: j['dob'],
-    avatarPath: j['avatar'] ?? '',
+    avatarUrl: j['avatar'] ?? '',
   );
 }
 
@@ -73,57 +74,59 @@ class AuthService {
 
   final ValueNotifier<AuthUser?> currentUser = ValueNotifier<AuthUser?>(null);
 
-  final Map<String, String> _passwords = {}; // email -> password (mock)
-  final Map<String, AuthUser> _users = {}; // email -> user
-  final Map<String, bool> _following = {}; // follow state per profile
-
-  String _hash(String input) =>
-      crypto.sha256.convert(utf8.encode(input)).toString();
+  final fb_auth.FirebaseAuth _auth = fb_auth.FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   Future<void> init() async {
-    final sp = await SharedPreferences.getInstance();
-    final rawUsers = sp.getString('auth_users');
-    if (rawUsers != null) {
-      try {
-        final map = json.decode(rawUsers) as Map<String, dynamic>;
-        _users.clear();
-        map.forEach((k, v) {
-          _users[k] = AuthUser.fromJson(Map<String, dynamic>.from(v));
-        });
-      } catch (_) {}
+    // Test Firebase Auth availability
+    try {
+      // This will throw if Auth is not configured
+      await _auth.signOut();
+      debugPrint('✓ Firebase Auth is properly configured');
+    } catch (e) {
+      debugPrint('✗ Firebase Auth configuration error: $e');
+      debugPrint('  ACTION REQUIRED:');
+      debugPrint(
+        '  1. Go to Firebase Console: https://console.firebase.google.com/',
+      );
+      debugPrint('  2. Select project: faith-connects-c7a7e');
+      debugPrint('  3. Go to Authentication → Get Started');
+      debugPrint('  4. Enable "Email/Password" sign-in method');
+      debugPrint('  5. Rebuild and run the app');
+      return;
     }
-    final rawPw = sp.getString('auth_passwords');
-    if (rawPw != null) {
-      try {
-        final map = json.decode(rawPw) as Map<String, dynamic>;
-        _passwords.clear();
-        map.forEach((k, v) => _passwords[k] = v.toString());
-      } catch (_) {}
-    }
-    final rawFollow = sp.getString('auth_follow');
-    if (rawFollow != null) {
-      try {
-        final map = json.decode(rawFollow) as Map<String, dynamic>;
-        _following.clear();
-        map.forEach((k, v) => _following[k] = v == true);
-      } catch (_) {}
-    }
-    final cur = sp.getString('auth_current');
-    if (cur != null && _users.containsKey(cur)) {
-      currentUser.value = _users[cur];
+
+    // Listen to auth state and load Firestore user
+    _auth.authStateChanges().listen((fbUser) async {
+      if (fbUser == null) {
+        currentUser.value = null;
+        return;
+      }
+      final doc = await _db.collection('users').doc(fbUser.uid).get();
+      if (doc.exists) {
+        currentUser.value = AuthUser.fromJson(doc.data()!);
+      } else {
+        // Create minimal user doc if missing
+        final u = AuthUser(
+          id: fbUser.uid,
+          email: fbUser.email ?? '',
+          name: fbUser.displayName ?? '',
+        );
+        await _db.collection('users').doc(fbUser.uid).set(u.toJson());
+        currentUser.value = u;
+      }
+    });
+    // If already signed in, trigger loading
+    final cur = _auth.currentUser;
+    if (cur != null) {
+      final doc = await _db.collection('users').doc(cur.uid).get();
+      if (doc.exists) currentUser.value = AuthUser.fromJson(doc.data()!);
     }
   }
 
-  Future<void> _saveAll() async {
-    final sp = await SharedPreferences.getInstance();
-    final usersMap = _users.map((k, v) => MapEntry(k, v.toJson()));
-    await sp.setString('auth_users', json.encode(usersMap));
-    await sp.setString('auth_passwords', json.encode(_passwords));
-    await sp.setString('auth_follow', json.encode(_following));
-    await sp.setString('auth_current', currentUser.value?.email ?? '');
-  }
-
-  Future<bool> register({
+  // Returns `null` on success, or an error message on failure.
+  Future<String?> register({
     required String email,
     required String password,
     required String name,
@@ -131,37 +134,147 @@ class AuthService {
     required String gender,
     String? dob,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    if (_users.containsKey(email)) return false;
-    final user = AuthUser(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      email: email,
-      name: name,
-      phone: phone,
-      gender: gender,
-      dob: dob,
-    );
-    _users[email] = user;
-    _passwords[email] = _hash(password);
-    currentUser.value = user;
-    await _saveAll();
-    return true;
+    try {
+      final cred = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = cred.user!.uid;
+      final userDoc = AuthUser(
+        id: uid,
+        email: email,
+        name: name,
+        phone: phone,
+        gender: gender,
+        dob: dob,
+      );
+      try {
+        await _db.collection('users').doc(uid).set(userDoc.toJson());
+        currentUser.value = userDoc;
+        return null;
+      } on FirebaseException catch (fe) {
+        // If Firestore write failed (e.g. permission-denied), roll back the
+        // created Authentication user to avoid leaving a dangling auth-only
+        // account.
+        try {
+          await cred.user?.delete();
+        } catch (_) {
+          // ignore failures when deleting the user
+        }
+        final code = fe.code;
+        if (code == 'permission-denied' ||
+            (fe.message != null &&
+                fe.message!.toLowerCase().contains('permission'))) {
+          final msg =
+              '[permission-denied] Missing or insufficient permissions.\n'
+              'Ensure Firestore rules allow authenticated users to create their own /users/{uid} document.\n'
+              'See Firebase Console → Firestore → Rules.';
+          debugPrint('AuthService.register FirestoreException: $msg');
+          return msg;
+        }
+        final msg = fe.message ?? fe.toString();
+        debugPrint('AuthService.register FirestoreException: $msg');
+        return msg;
+      }
+    } on fb_auth.FirebaseAuthException catch (e, st) {
+      final code = e.code;
+      String friendly;
+      if (code == 'configuration-not-found' ||
+          (e.message != null &&
+              e.message!.toLowerCase().contains('configuration'))) {
+        friendly =
+            'Firebase Authentication is not enabled.\n\n'
+            'Please enable it in Firebase Console:\n'
+            '1. Visit https://console.firebase.google.com/\n'
+            '2. Select project: faith-connects-c7a7e\n'
+            '3. Go to Authentication → Get Started\n'
+            '4. Enable Email/Password sign-in method\n'
+            '5. Rebuild and run this app';
+      } else if (code == 'email-already-in-use') {
+        friendly = 'The email address is already in use.';
+      } else if (code == 'invalid-email') {
+        friendly = 'The email address is invalid.';
+      } else if (code == 'weak-password') {
+        friendly = 'The password is too weak. Use at least 6 characters.';
+      } else {
+        friendly = e.message ?? 'Registration failed.';
+      }
+      final msg = '[${code}] $friendly';
+      debugPrint('AuthService.register FirebaseAuthException: $msg');
+      debugPrintStack(label: 'AuthService.register stack', stackTrace: st);
+      return msg;
+    } catch (e, st) {
+      final msg = e.toString();
+      debugPrint('AuthService.register unexpected error: $msg');
+      debugPrintStack(label: 'AuthService.register stack', stackTrace: st);
+      return msg;
+    }
   }
 
-  Future<bool> login({required String email, required String password}) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    final pw = _passwords[email];
-    if (pw == null) return false;
-    if (pw != _hash(password)) return false;
-    currentUser.value = _users[email];
-    await _saveAll();
-    return true;
+  // Returns null on success, or an error message string on failure.
+  Future<String?> login({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final cred = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = cred.user!.uid;
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        currentUser.value = AuthUser.fromJson(doc.data()!);
+      } else {
+        // User exists in Auth but not in Firestore — create the doc.
+        final u = AuthUser(
+          id: uid,
+          email: email,
+          name: cred.user?.displayName ?? '',
+        );
+        try {
+          await _db.collection('users').doc(uid).set(u.toJson());
+        } catch (_) {}
+        currentUser.value = u;
+      }
+      return null;
+    } on fb_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+          return 'No account found for that email.';
+        case 'wrong-password':
+        case 'invalid-credential':
+          return 'Incorrect password. Please try again.';
+        case 'invalid-email':
+          return 'The email address is invalid.';
+        case 'user-disabled':
+          return 'This account has been disabled.';
+        case 'too-many-requests':
+          return 'Too many failed attempts. Please try again later.';
+        default:
+          return e.message ?? 'Login failed.';
+      }
+    } catch (e) {
+      return e.toString();
+    }
   }
 
   Future<void> logout() async {
-    await Future.delayed(const Duration(milliseconds: 150));
+    await _auth.signOut();
     currentUser.value = null;
-    await _saveAll();
+  }
+
+  Future<String?> _uploadAvatar(String uid, String localPath) async {
+    try {
+      final file = File(localPath);
+      if (!await file.exists()) return null;
+      final ref = _storage.ref().child('avatars').child('$uid.jpg');
+      final task = await ref.putFile(file);
+      final url = await task.ref.getDownloadURL();
+      return url;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> updateProfile({
@@ -173,27 +286,99 @@ class AuthService {
     String? dob,
     String? avatarPath,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    final user = _users[email];
-    if (user == null) return false;
-    final updated = user.copyWith(
-      name: name,
-      bio: bio,
-      phone: phone,
-      gender: gender,
-      dob: dob,
-      avatarPath: avatarPath,
-    );
-    _users[email] = updated;
-    if (currentUser.value?.email == email) currentUser.value = updated;
-    await _saveAll();
-    return true;
+    try {
+      // find user doc by email (emails are unique in FirebaseAuth)
+      final q = await _db
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (q.docs.isEmpty) return false;
+      final doc = q.docs.first;
+      final uid = doc.id;
+      String? avatarUrl = doc.data()['avatar'];
+      if (avatarPath != null && avatarPath.isNotEmpty) {
+        // if it's a local file path, upload
+        if (avatarPath.startsWith('/') ||
+            avatarPath.contains(':\\') ||
+            avatarPath.startsWith('file://')) {
+          final uploaded = await _uploadAvatar(
+            uid,
+            avatarPath.replaceFirst('file://', ''),
+          );
+          if (uploaded != null) avatarUrl = uploaded;
+        } else {
+          // otherwise treat as already a URL
+          avatarUrl = avatarPath;
+        }
+      }
+      final updateMap = <String, dynamic>{};
+      if (name != null) updateMap['name'] = name;
+      if (bio != null) updateMap['bio'] = bio;
+      if (phone != null) updateMap['phone'] = phone;
+      if (gender != null) updateMap['gender'] = gender;
+      if (dob != null) updateMap['dob'] = dob;
+      if (avatarUrl != null) updateMap['avatar'] = avatarUrl;
+      if (updateMap.isNotEmpty) {
+        await _db.collection('users').doc(uid).update(updateMap);
+      }
+      final updatedDoc = await _db.collection('users').doc(uid).get();
+      currentUser.value = AuthUser.fromJson(updatedDoc.data()!);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
-  bool isFollowing(String email) => _following[email] == true;
+  Future<bool> toggleFollow(String email) async {
+    try {
+      final cur = _auth.currentUser;
+      if (cur == null) return false;
+      final q = await _db
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (q.docs.isEmpty) return false;
+      final targetUid = q.docs.first.id;
+      final docRef = _db
+          .collection('users')
+          .doc(cur.uid)
+          .collection('following')
+          .doc(targetUid);
+      final snap = await docRef.get();
+      if (snap.exists) {
+        await docRef.delete();
+        return false;
+      } else {
+        await docRef.set({'since': DateTime.now().toIso8601String()});
+        return true;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
 
-  Future<void> toggleFollow(String email) async {
-    _following[email] = !(_following[email] == true);
-    await _saveAll();
+  Future<bool> isFollowing(String email) async {
+    try {
+      final cur = _auth.currentUser;
+      if (cur == null) return false;
+      final q = await _db
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
+      if (q.docs.isEmpty) return false;
+      final targetUid = q.docs.first.id;
+      final docRef = _db
+          .collection('users')
+          .doc(cur.uid)
+          .collection('following')
+          .doc(targetUid);
+      final snap = await docRef.get();
+      return snap.exists;
+    } catch (_) {
+      return false;
+    }
   }
 }
