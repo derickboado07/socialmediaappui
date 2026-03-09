@@ -147,9 +147,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       bio: _bioCtrl.text.trim(),
       phone: _phoneCtrl.text.trim(),
       gender: _gender,
-      dob: _selectedDob != null
-          ? _selectedDob!.toIso8601String().split('T').first
-          : null,
+      dob: _selectedDob?.toIso8601String().split('T').first,
       avatarPath: _avatarBytes == null ? _avatarPath : null,
       avatarBytes: _avatarBytes,
       avatarFilename: _avatarFilename.isNotEmpty ? _avatarFilename : null,
@@ -369,7 +367,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _gender.isEmpty ? null : _gender,
+                    initialValue: _gender.isEmpty ? null : _gender,
                     decoration: _dec('Gender'),
                     items: const [
                       DropdownMenuItem(value: 'Male', child: Text('Male')),
@@ -408,13 +406,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
+                    height: 52,
                     child: ElevatedButton(
                       onPressed: _loading ? null : _save,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _gold,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: _goldLight,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
@@ -465,21 +465,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   InputDecoration _dec(String label) => InputDecoration(
     labelText: label,
-    labelStyle: const TextStyle(color: Color(0xFF888888)),
+    labelStyle: const TextStyle(color: Color(0xFF888888), fontSize: 14),
+    filled: true,
+    fillColor: const Color(0xFFFAF9F6),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
     ),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
     ),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: _gold),
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: _gold, width: 1.5),
     ),
-    filled: true,
-    fillColor: Colors.white,
   );
 
   Widget _field(

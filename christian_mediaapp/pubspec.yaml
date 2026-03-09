@@ -68,6 +68,8 @@ flutter:
 
   assets:
     - assets/
+    - lib/Bible/EN-English/asv.sql
+    - lib/Bible/TL-Wikang_Tagalog/tagab.sql
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
