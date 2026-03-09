@@ -1,5 +1,5 @@
-import 'dart:io';
-
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
@@ -15,6 +15,7 @@ class CreatePostScreen extends StatefulWidget {
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final TextEditingController _captionCtrl = TextEditingController();
   XFile? _media;
+  Uint8List? _mediaBytes;
   String? _mediaType;
   bool _submitting = false;
   final ImagePicker _picker = ImagePicker();
@@ -39,6 +40,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.dispose();
   }
 
+  // 10 MB limit for images, 100 MB for videos (must match storage.rules).
+  static const int _maxImageBytes = 10 * 1024 * 1024;
+  static const int _maxVideoBytes = 100 * 1024 * 1024;
+
   Future<void> _pickImage() async {
     try {
       final file = await _picker.pickImage(
@@ -46,8 +51,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         imageQuality: 85,
       );
       if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > _maxImageBytes) {
+        if (!mounted) return;
+        _showSnack('Image is too large. Maximum size is 10 MB.');
+        return;
+      }
       setState(() {
         _media = file;
+        _mediaBytes = bytes;
         _mediaType = 'image';
       });
     } catch (_) {
@@ -60,10 +72,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     try {
       final file = await _picker.pickVideo(source: ImageSource.gallery);
       if (file == null) return;
-      setState(() {
-        _media = file;
-        _mediaType = 'video';
-      });
+      if (kIsWeb) {
+        final bytes = await file.readAsBytes();
+        if (bytes.length > _maxVideoBytes) {
+          if (!mounted) return;
+          _showSnack('Video is too large. Maximum size is 100 MB.');
+          return;
+        }
+        setState(() {
+          _media = file;
+          _mediaBytes = bytes;
+          _mediaType = 'video';
+        });
+      } else {
+        // On mobile, check file size via path before reading all bytes.
+        final fileSize = await file.length();
+        if (fileSize > _maxVideoBytes) {
+          if (!mounted) return;
+          _showSnack('Video is too large. Maximum size is 100 MB.');
+          return;
+        }
+        setState(() {
+          _media = file;
+          _mediaBytes = null;
+          _mediaType = 'video';
+        });
+      }
     } catch (_) {
       if (!mounted) return;
       _showSnack('Failed to pick video');
@@ -90,18 +124,35 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
     setState(() => _submitting = true);
     try {
+      // Use already-read bytes when available; otherwise fall back to path (mobile).
       await PostService.instance.addPost(
         user.id,
         user.email,
         _captionCtrl.text.trim(),
-        mediaPath: _media?.path,
+        authorAvatarUrl: user.avatarUrl,
+        mediaBytes: _mediaBytes,
+        mediaFilename: _mediaBytes != null ? _media!.name : null,
+        mediaPath: _mediaBytes == null ? _media?.path : null,
         mediaType: _mediaType,
       );
       if (!mounted) return;
       Navigator.pop(context);
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      _showSnack('Failed to share post. Please try again.');
+      // Extract a readable message from FirebaseException, Exception, or any other error.
+      String msg;
+      if (e is Exception) {
+        msg = e.toString().replaceAll(RegExp(r'^.*Exception:\s*'), '').trim();
+      } else {
+        msg = e.toString().trim();
+      }
+      // Strip the ugly boxed-future wrapper if present.
+      if (msg.contains('Dart exception thrown from converted Future')) {
+        msg = 'Upload failed. Check your connection and try again.';
+      }
+      _showSnack(
+        msg.isNotEmpty ? msg : 'Failed to share post. Please try again.',
+      );
       setState(() => _submitting = false);
     }
   }
@@ -294,12 +345,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   _mediaType == 'image'
                       ? ClipRRect(
                           borderRadius: BorderRadius.zero,
-                          child: Image.file(
-                            File(_media!.path),
-                            height: 260,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                          ),
+                          child: _mediaBytes != null
+                              ? Image.memory(
+                                  _mediaBytes!,
+                                  height: 260,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                )
+                              : const SizedBox.shrink(),
                         )
                       : Container(
                           height: 200,
@@ -333,6 +386,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       onTap: () => setState(() {
                         _media = null;
                         _mediaType = null;
+                        _mediaBytes = null;
                       }),
                       child: Container(
                         padding: const EdgeInsets.all(6),

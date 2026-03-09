@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,6 +14,7 @@ class AuthUser {
   final String gender;
   final String? dob; // ISO date string (YYYY-MM-DD)
   final String avatarUrl;
+  final String bannerUrl;
 
   AuthUser({
     required this.id,
@@ -23,6 +25,7 @@ class AuthUser {
     this.gender = '',
     this.dob,
     this.avatarUrl = '',
+    this.bannerUrl = '',
   });
 
   AuthUser copyWith({
@@ -32,6 +35,7 @@ class AuthUser {
     String? gender,
     String? dob,
     String? avatarUrl,
+    String? bannerUrl,
   }) {
     return AuthUser(
       id: id,
@@ -42,6 +46,7 @@ class AuthUser {
       gender: gender ?? this.gender,
       dob: dob ?? this.dob,
       avatarUrl: avatarUrl ?? this.avatarUrl,
+      bannerUrl: bannerUrl ?? this.bannerUrl,
     );
   }
 
@@ -54,6 +59,7 @@ class AuthUser {
     'gender': gender,
     'dob': dob,
     'avatar': avatarUrl,
+    'banner': bannerUrl,
   };
 
   static AuthUser fromJson(Map<String, dynamic> j) => AuthUser(
@@ -65,6 +71,7 @@ class AuthUser {
     gender: j['gender'] ?? '',
     dob: j['dob'],
     avatarUrl: j['avatar'] ?? '',
+    bannerUrl: j['banner'] ?? '',
   );
 }
 
@@ -79,24 +86,6 @@ class AuthService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
   Future<void> init() async {
-    // Test Firebase Auth availability
-    try {
-      // This will throw if Auth is not configured
-      await _auth.signOut();
-      debugPrint('✓ Firebase Auth is properly configured');
-    } catch (e) {
-      debugPrint('✗ Firebase Auth configuration error: $e');
-      debugPrint('  ACTION REQUIRED:');
-      debugPrint(
-        '  1. Go to Firebase Console: https://console.firebase.google.com/',
-      );
-      debugPrint('  2. Select project: faith-connects-c7a7e');
-      debugPrint('  3. Go to Authentication → Get Started');
-      debugPrint('  4. Enable "Email/Password" sign-in method');
-      debugPrint('  5. Rebuild and run the app');
-      return;
-    }
-
     // Listen to auth state and load Firestore user
     _auth.authStateChanges().listen((fbUser) async {
       if (fbUser == null) {
@@ -272,7 +261,58 @@ class AuthService {
       final task = await ref.putFile(file);
       final url = await task.ref.getDownloadURL();
       return url;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('AuthService: avatar upload failed: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _uploadBanner(String uid, String localPath) async {
+    try {
+      final file = File(localPath);
+      if (!await file.exists()) return null;
+      final ref = _storage.ref().child('banners').child('$uid.jpg');
+      final task = await ref.putFile(file);
+      final url = await task.ref.getDownloadURL();
+      return url;
+    } catch (e) {
+      debugPrint('AuthService: banner upload failed: $e');
+      return null;
+    }
+  }
+
+  String _mimeFromFilename(String filename) {
+    final ext = filename.contains('.')
+        ? filename.split('.').last.toLowerCase()
+        : '';
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'jpg':
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  Future<String?> _uploadImageBytes(
+    String storagePath,
+    Uint8List bytes,
+    String filename,
+  ) async {
+    try {
+      final mime = _mimeFromFilename(filename);
+      final ref = _storage.ref().child(storagePath);
+      final task = await ref.putData(
+        bytes,
+        SettableMetadata(contentType: mime),
+      );
+      return await task.ref.getDownloadURL();
+    } catch (e) {
+      debugPrint('AuthService: image bytes upload failed: $e');
       return null;
     }
   }
@@ -285,6 +325,11 @@ class AuthService {
     String? gender,
     String? dob,
     String? avatarPath,
+    Uint8List? avatarBytes,
+    String? avatarFilename,
+    String? bannerPath,
+    Uint8List? bannerBytes,
+    String? bannerFilename,
   }) async {
     try {
       // find user doc by email (emails are unique in FirebaseAuth)
@@ -296,9 +341,17 @@ class AuthService {
       if (q.docs.isEmpty) return false;
       final doc = q.docs.first;
       final uid = doc.id;
+
       String? avatarUrl = doc.data()['avatar'];
-      if (avatarPath != null && avatarPath.isNotEmpty) {
-        // if it's a local file path, upload
+      if (avatarBytes != null && avatarFilename != null) {
+        // Web: upload raw bytes directly to Firebase Storage
+        final uploaded = await _uploadImageBytes(
+          'avatars/$uid/${avatarFilename}',
+          avatarBytes,
+          avatarFilename,
+        );
+        if (uploaded != null) avatarUrl = uploaded;
+      } else if (avatarPath != null && avatarPath.isNotEmpty) {
         if (avatarPath.startsWith('/') ||
             avatarPath.contains(':\\') ||
             avatarPath.startsWith('file://')) {
@@ -307,11 +360,31 @@ class AuthService {
             avatarPath.replaceFirst('file://', ''),
           );
           if (uploaded != null) avatarUrl = uploaded;
-        } else {
-          // otherwise treat as already a URL
-          avatarUrl = avatarPath;
         }
+        // Blob URLs and unrecognised paths are ignored — they are not permanent.
       }
+
+      String? bannerUrl = doc.data()['banner'];
+      if (bannerBytes != null && bannerFilename != null) {
+        final uploaded = await _uploadImageBytes(
+          'banners/$uid/${bannerFilename}',
+          bannerBytes,
+          bannerFilename,
+        );
+        if (uploaded != null) bannerUrl = uploaded;
+      } else if (bannerPath != null && bannerPath.isNotEmpty) {
+        if (bannerPath.startsWith('/') ||
+            bannerPath.contains(':\\') ||
+            bannerPath.startsWith('file://')) {
+          final uploaded = await _uploadBanner(
+            uid,
+            bannerPath.replaceFirst('file://', ''),
+          );
+          if (uploaded != null) bannerUrl = uploaded;
+        }
+        // Blob URLs are ignored.
+      }
+
       final updateMap = <String, dynamic>{};
       if (name != null) updateMap['name'] = name;
       if (bio != null) updateMap['bio'] = bio;
@@ -319,6 +392,7 @@ class AuthService {
       if (gender != null) updateMap['gender'] = gender;
       if (dob != null) updateMap['dob'] = dob;
       if (avatarUrl != null) updateMap['avatar'] = avatarUrl;
+      if (bannerUrl != null) updateMap['banner'] = bannerUrl;
       if (updateMap.isNotEmpty) {
         await _db.collection('users').doc(uid).update(updateMap);
       }
@@ -326,6 +400,7 @@ class AuthService {
       currentUser.value = AuthUser.fromJson(updatedDoc.data()!);
       return true;
     } catch (e) {
+      debugPrint('AuthService.updateProfile error: $e');
       return false;
     }
   }

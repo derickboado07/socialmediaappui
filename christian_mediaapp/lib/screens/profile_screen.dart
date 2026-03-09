@@ -1,7 +1,14 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/post_service.dart';
+import '../main.dart' show CommentsSheet, ShareSheet, SharedPostPreview;
+
+// ─── Color constants ──────────────────────────────────────────────────────────
+const _gold = Color(0xFFD4AF37);
+const _goldLight = Color(0xFFF5E6B3);
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,53 +18,137 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _isFollowing = false;
-  final TextEditingController _newPostCtrl = TextEditingController();
-  List posts = [];
-  Map<String, bool> _savedMap = {};
+  @override
+  void initState() {
+    super.initState();
+  }
 
-  void _toggleFollow(String email) async {
-    final newState = await AuthService.instance.toggleFollow(email);
-    setState(() => _isFollowing = newState);
+  Future<void> _pickAndUploadAvatar() async {
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) return;
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    _showUploadSnack('Uploading profile photo...');
+    bool ok;
+    if (kIsWeb) {
+      final bytes = await file.readAsBytes();
+      ok = await AuthService.instance.updateProfile(
+        email: user.email,
+        avatarBytes: bytes,
+        avatarFilename: file.name,
+      );
+    } else {
+      ok = await AuthService.instance.updateProfile(
+        email: user.email,
+        avatarPath: file.path,
+      );
+    }
     if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_isFollowing ? 'Following' : 'Unfollowed')),
+      SnackBar(
+        content: Text(
+          ok ? 'Profile photo updated!' : 'Upload failed. Try again.',
+        ),
+        backgroundColor: ok ? _gold : Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
-  @override
-  void dispose() {
-    _newPostCtrl.dispose();
-    super.dispose();
+  Future<void> _pickAndUploadBanner() async {
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) return;
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    _showUploadSnack('Uploading cover photo...');
+    bool ok;
+    if (kIsWeb) {
+      final bytes = await file.readAsBytes();
+      ok = await AuthService.instance.updateProfile(
+        email: user.email,
+        bannerBytes: bytes,
+        bannerFilename: file.name,
+      );
+    } else {
+      ok = await AuthService.instance.updateProfile(
+        email: user.email,
+        bannerPath: file.path,
+      );
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Cover photo updated!' : 'Upload failed. Try again.',
+        ),
+        backgroundColor: ok ? _gold : Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
-  void _shareProfile(String email) async {
+  void _showUploadSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(msg),
+          ],
+        ),
+        backgroundColor: _gold,
+        duration: const Duration(minutes: 1),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _shareProfile(AuthUser user) async {
     final url =
-        'https://faithconnect.example.com/u/${Uri.encodeComponent(email)}';
+        'https://faithconnect.page.link/u/${Uri.encodeComponent(user.email)}';
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile link copied to clipboard')),
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.link, color: Colors.white, size: 16),
+            SizedBox(width: 8),
+            Text('Profile link copied!'),
+          ],
+        ),
+        backgroundColor: const Color(0xFF64B5F6),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
-  }
-
-  String _formatTime(String iso) {
-    try {
-      final dt = DateTime.parse(iso).toLocal();
-      final diff = DateTime.now().difference(dt);
-      if (diff.inSeconds < 60) return 'now';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-      if (diff.inHours < 24) return '${diff.inHours}h';
-      if (diff.inDays < 7) return '${diff.inDays}d';
-      return '${dt.month}/${dt.day}/${dt.year}';
-    } catch (_) {
-      return '';
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F4F4),
       body: ValueListenableBuilder<AuthUser?>(
         valueListenable: AuthService.instance.currentUser,
         builder: (context, user, _) {
@@ -67,11 +158,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Not logged in'),
+                    const Icon(
+                      Icons.person_outline,
+                      size: 64,
+                      color: Color(0xFFCCCCCC),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Not logged in',
+                      style: TextStyle(fontSize: 16, color: Color(0xFF888888)),
+                    ),
                     const SizedBox(height: 12),
                     ElevatedButton(
                       onPressed: () =>
                           Navigator.pushReplacementNamed(context, '/login'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _gold,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
                       child: const Text('Login'),
                     ),
                   ],
@@ -80,319 +187,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           }
 
-          AuthService.instance.isFollowing(user.email).then((v) {
-            if (!mounted) return;
-            setState(() => _isFollowing = v);
-          });
-          // load posts for this user
-          PostService.instance.getPostsForUser(user.email).then((p) {
-            if (!mounted) return;
-            setState(() {
-              posts = p;
-            });
-            // load saved states
-            final cur = AuthService.instance.currentUser.value;
-            if (cur != null) {
-              for (var post in p) {
-                PostService.instance.isSaved(post.id, cur.id).then((saved) {
-                  if (!mounted) return;
-                  setState(() => _savedMap[post.id] = saved);
-                });
-              }
-            }
-          });
-
           return CustomScrollView(
             slivers: [
+              // ── Banner / App Bar ──────────────────────────────────────
               SliverAppBar(
-                expandedHeight: 180,
+                expandedHeight: 220,
                 pinned: true,
                 backgroundColor: Colors.white,
                 foregroundColor: const Color(0xFF333333),
-                flexibleSpace: FlexibleSpaceBar(
-                  titlePadding: const EdgeInsets.only(left: 16, bottom: 12),
-                  title: Text(user.name, style: const TextStyle(fontSize: 16)),
-                  background: Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFFD4AF37), Color(0xFFF5E6B3)],
-                      ),
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.landscape,
-                        size: 60,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+                elevation: 0,
                 actions: [
                   IconButton(
+                    icon: const Icon(Icons.logout_rounded),
+                    tooltip: 'Logout',
                     onPressed: () async {
                       await AuthService.instance.logout();
-                      if (context.mounted)
-                        Navigator.pushReplacementNamed(context, '/login');
+                      if (!context.mounted) return;
+                      Navigator.pushReplacementNamed(context, '/login');
                     },
-                    icon: const Icon(Icons.logout),
                   ),
                 ],
-              ),
-
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                flexibleSpace: FlexibleSpaceBar(
+                  collapseMode: CollapseMode.pin,
+                  background: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          CircleAvatar(
-                            radius: 44,
-                            backgroundColor: const Color(0xFFE0E0E0),
-                            child: (user.avatarUrl.isEmpty)
-                                ? Text(
-                                    user.name.isNotEmpty
-                                        ? user.name[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(fontSize: 28),
-                                  )
-                                : ClipOval(
-                                    child: Image.network(
-                                      user.avatarUrl,
-                                      fit: BoxFit.cover,
-                                      width: 88,
-                                      height: 88,
-                                    ),
-                                  ),
+                      // Banner image or default gradient
+                      user.bannerUrl.isNotEmpty
+                          ? Image.network(
+                              user.bannerUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _DefaultBanner(),
+                            )
+                          : _DefaultBanner(),
+                      // Bottom gradient fade
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.45),
+                            ],
+                            stops: const [0.55, 1.0],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                      ),
+                      // Edit cover button
+                      Positioned(
+                        bottom: 12,
+                        right: 12,
+                        child: GestureDetector(
+                          onTap: _pickAndUploadBanner,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.4),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  user.name,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: Colors.white,
+                                  size: 14,
                                 ),
-                                const SizedBox(height: 6),
+                                SizedBox(width: 5),
                                 Text(
-                                  user.email,
-                                  style: const TextStyle(color: Colors.grey),
+                                  'Edit Cover',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                          Column(
-                            children: [
-                              ElevatedButton(
-                                onPressed: () => Navigator.pushNamed(
-                                  context,
-                                  '/edit_profile',
-                                ),
-                                child: const Text('Edit'),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton(
-                                onPressed: () => _shareProfile(user.email),
-                                child: const Icon(Icons.share),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              _StatColumn(number: '2.5K', label: 'Followers'),
-                              const SizedBox(width: 16),
-                              _StatColumn(number: '890', label: 'Following'),
-                            ],
-                          ),
-                          ElevatedButton(
-                            onPressed: () => _toggleFollow(user.email),
-                            child: Text(_isFollowing ? 'Following' : 'Follow'),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Create post pill + quick post controls
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () =>
-                                  Navigator.pushNamed(
-                                    context,
-                                    '/create_post',
-                                  ).then((_) {
-                                    PostService.instance
-                                        .getPostsForUser(user.email)
-                                        .then((p) {
-                                          setState(() => posts = p);
-                                        });
-                                  }),
-                              borderRadius: BorderRadius.circular(24),
-                              child: Container(
-                                height: 44,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF5F5F5),
-                                  borderRadius: BorderRadius.circular(24),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 14,
-                                      backgroundColor: const Color(0xFFD4AF37),
-                                      child: (user.avatarUrl.isEmpty)
-                                          ? const Icon(
-                                              Icons.person,
-                                              size: 16,
-                                              color: Colors.white,
-                                            )
-                                          : ClipOval(
-                                              child: Image.network(
-                                                user.avatarUrl,
-                                                width: 28,
-                                                height: 28,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    const Expanded(
-                                      child: Text(
-                                        'Share your testimony...',
-                                        style: TextStyle(color: Colors.grey),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
-                            onPressed: () async {
-                              final text = _newPostCtrl.text.trim();
-                              if (text.isEmpty) return;
-                              await PostService.instance.addPost(
-                                user.id,
-                                user.email,
-                                text,
-                              );
-                              _newPostCtrl.clear();
-                              final p = await PostService.instance
-                                  .getPostsForUser(user.email);
-                              setState(() => posts = p);
-                            },
-                            child: const Text('Post'),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: () =>
-                                Navigator.pushNamed(
-                                  context,
-                                  '/create_post',
-                                ).then((_) {
-                                  PostService.instance
-                                      .getPostsForUser(user.email)
-                                      .then((p) {
-                                        if (!mounted) return;
-                                        setState(() => posts = p);
-                                      });
-                                }),
-                            icon: const Icon(Icons.photo_library),
-                            tooltip: 'Create post with media',
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      Card(
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Contact',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                user.phone.isEmpty
-                                    ? 'No phone provided.'
-                                    : user.phone,
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Text(
-                                    'Gender: ',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(user.gender.isEmpty ? '—' : user.gender),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Text(
-                                    'DOB: ',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(user.dob ?? '—'),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              const Divider(),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Bio',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(user.bio.isEmpty ? 'No bio yet.' : user.bio),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Posts',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
@@ -400,532 +279,401 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
 
-              SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final post = posts[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 18,
-                                  child: Text(
-                                    user.name.isNotEmpty
-                                        ? user.name[0].toUpperCase()
-                                        : '?',
+              // ── Profile info ──────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      // Avatar + name row
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // Avatar with camera badge
+                          Stack(
+                            children: [
+                              Container(
+                                width: 90,
+                                height: 90,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3,
                                   ),
+                                  color: const Color(0xFFE8D5B7),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    user.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
+                                child: ClipOval(
+                                  child: user.avatarUrl.isNotEmpty
+                                      ? Image.network(
+                                          user.avatarUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              _avatarFallback(user),
+                                        )
+                                      : _avatarFallback(user),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 2,
+                                right: 2,
+                                child: GestureDetector(
+                                  onTap: _pickAndUploadAvatar,
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: const BoxDecoration(
+                                      color: _gold,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt_rounded,
+                                      color: Colors.white,
+                                      size: 15,
                                     ),
                                   ),
                                 ),
-                                Text(
-                                  _formatTime(post.timestamp),
-                                  style: const TextStyle(color: Colors.grey),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 8),
-                            Text(
-                              post.content,
-                              style: const TextStyle(fontSize: 14, height: 1.3),
-                            ),
-                            const SizedBox(height: 8),
-                            const Divider(height: 1),
-
-                            if (post.mediaUrl != null) ...[
-                              const SizedBox(height: 8),
-                              post.mediaType == 'image'
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        post.mediaUrl!,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    )
-                                  : Container(
-                                      height: 160,
-                                      decoration: BoxDecoration(
-                                        color: Colors.black12,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.videocam,
-                                              size: 40,
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              post.mediaUrl!.split('/').last,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
+                              ),
                             ],
-
-                            const SizedBox(height: 8),
-
-                            Row(
+                          ),
+                          const SizedBox(width: 14),
+                          // Name + email
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _ReactionButton(
-                                  label: 'Amen',
-                                  icon: Icons.thumb_up_alt_outlined,
-                                  count: post.reactions['Amen']?.length ?? 0,
-                                  active:
-                                      AuthService.instance.currentUser.value !=
-                                          null &&
-                                      (post.reactions['Amen']?.contains(
-                                            AuthService
-                                                .instance
-                                                .currentUser
-                                                .value!
-                                                .id,
-                                          ) ??
-                                          false),
-                                  onTap: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleReaction(
-                                      post.id,
-                                      'Amen',
-                                      cur.id,
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _ReactionButton(
-                                  label: 'Pray',
-                                  icon: Icons.self_improvement,
-                                  count: post.reactions['Pray']?.length ?? 0,
-                                  active:
-                                      AuthService.instance.currentUser.value !=
-                                          null &&
-                                      (post.reactions['Pray']?.contains(
-                                            AuthService
-                                                .instance
-                                                .currentUser
-                                                .value!
-                                                .id,
-                                          ) ??
-                                          false),
-                                  onTap: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleReaction(
-                                      post.id,
-                                      'Pray',
-                                      cur.id,
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _ReactionButton(
-                                  label: 'Worship',
-                                  icon: Icons.music_note,
-                                  count: post.reactions['Worship']?.length ?? 0,
-                                  active:
-                                      AuthService.instance.currentUser.value !=
-                                          null &&
-                                      (post.reactions['Worship']?.contains(
-                                            AuthService
-                                                .instance
-                                                .currentUser
-                                                .value!
-                                                .id,
-                                          ) ??
-                                          false),
-                                  onTap: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleReaction(
-                                      post.id,
-                                      'Worship',
-                                      cur.id,
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _ReactionButton(
-                                  label: 'Love',
-                                  icon: Icons.favorite_border,
-                                  count: post.reactions['Love']?.length ?? 0,
-                                  active:
-                                      AuthService.instance.currentUser.value !=
-                                          null &&
-                                      (post.reactions['Love']?.contains(
-                                            AuthService
-                                                .instance
-                                                .currentUser
-                                                .value!
-                                                .id,
-                                          ) ??
-                                          false),
-                                  onTap: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleReaction(
-                                      post.id,
-                                      'Love',
-                                      cur.id,
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _ReactionButton(
-                                  label: 'Praise',
-                                  icon: Icons.emoji_emotions,
-                                  count: post.reactions['Praise']?.length ?? 0,
-                                  active:
-                                      AuthService.instance.currentUser.value !=
-                                          null &&
-                                      (post.reactions['Praise']?.contains(
-                                            AuthService
-                                                .instance
-                                                .currentUser
-                                                .value!
-                                                .id,
-                                          ) ??
-                                          false),
-                                  onTap: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleReaction(
-                                      post.id,
-                                      'Praise',
-                                      cur.id,
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                ),
-
-                                const Spacer(),
-
-                                IconButton(
-                                  onPressed: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to react'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await showModalBottomSheet<void>(
-                                      context: context,
-                                      builder: (ctx) {
-                                        return SafeArea(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.thumb_up,
-                                                ),
-                                                title: const Text('Amen'),
-                                                onTap: () async {
-                                                  await PostService.instance
-                                                      .toggleReaction(
-                                                        post.id,
-                                                        'Amen',
-                                                        cur.id,
-                                                      );
-                                                  Navigator.pop(ctx);
-                                                  final p = await PostService
-                                                      .instance
-                                                      .getPostsForUser(
-                                                        user.email,
-                                                      );
-                                                  if (!mounted) return;
-                                                  setState(() => posts = p);
-                                                },
-                                              ),
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.self_improvement,
-                                                ),
-                                                title: const Text('Pray'),
-                                                onTap: () async {
-                                                  await PostService.instance
-                                                      .toggleReaction(
-                                                        post.id,
-                                                        'Pray',
-                                                        cur.id,
-                                                      );
-                                                  Navigator.pop(ctx);
-                                                  final p = await PostService
-                                                      .instance
-                                                      .getPostsForUser(
-                                                        user.email,
-                                                      );
-                                                  if (!mounted) return;
-                                                  setState(() => posts = p);
-                                                },
-                                              ),
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.music_note,
-                                                ),
-                                                title: const Text('Worship'),
-                                                onTap: () async {
-                                                  await PostService.instance
-                                                      .toggleReaction(
-                                                        post.id,
-                                                        'Worship',
-                                                        cur.id,
-                                                      );
-                                                  Navigator.pop(ctx);
-                                                  final p = await PostService
-                                                      .instance
-                                                      .getPostsForUser(
-                                                        user.email,
-                                                      );
-                                                  if (!mounted) return;
-                                                  setState(() => posts = p);
-                                                },
-                                              ),
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.favorite,
-                                                ),
-                                                title: const Text('Love'),
-                                                onTap: () async {
-                                                  await PostService.instance
-                                                      .toggleReaction(
-                                                        post.id,
-                                                        'Love',
-                                                        cur.id,
-                                                      );
-                                                  Navigator.pop(ctx);
-                                                  final p = await PostService
-                                                      .instance
-                                                      .getPostsForUser(
-                                                        user.email,
-                                                      );
-                                                  if (!mounted) return;
-                                                  setState(() => posts = p);
-                                                },
-                                              ),
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.emoji_emotions,
-                                                ),
-                                                title: const Text('Praise'),
-                                                onTap: () async {
-                                                  await PostService.instance
-                                                      .toggleReaction(
-                                                        post.id,
-                                                        'Praise',
-                                                        cur.id,
-                                                      );
-                                                  Navigator.pop(ctx);
-                                                  final p = await PostService
-                                                      .instance
-                                                      .getPostsForUser(
-                                                        user.email,
-                                                      );
-                                                  if (!mounted) return;
-                                                  setState(() => posts = p);
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    );
-                                  },
-                                  icon: const Icon(Icons.thumb_up_outlined),
-                                  tooltip: 'React',
-                                ),
-
-                                IconButton(
-                                  onPressed: () async {
-                                    await showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      builder: (ctx) =>
-                                          _CommentsSheet(postId: post.id),
-                                    );
-                                    final p = await PostService.instance
-                                        .getPostsForUser(user.email);
-                                    setState(() => posts = p);
-                                  },
-                                  icon: const Icon(Icons.comment_outlined),
-                                ),
-
-                                IconButton(
-                                  onPressed: () async {
-                                    final cur =
-                                        AuthService.instance.currentUser.value;
-                                    if (cur == null) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Login to save posts'),
-                                        ),
-                                      );
-                                      return;
-                                    }
-                                    await PostService.instance.toggleSave(
-                                      post.id,
-                                      cur.id,
-                                    );
-                                    final saved = await PostService.instance
-                                        .isSaved(post.id, cur.id);
-                                    setState(() => _savedMap[post.id] = saved);
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          saved ? 'Saved' : 'Removed',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  icon: Icon(
-                                    _savedMap[post.id] == true
-                                        ? Icons.bookmark
-                                        : Icons.bookmark_outline,
+                                Text(
+                                  user.name.isNotEmpty
+                                      ? user.name
+                                      : 'Your Name',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2C2C2C),
                                   ),
                                 ),
-
-                                IconButton(
-                                  onPressed: () async {
-                                    final content =
-                                        '${post.content}\n— from ${user.name}';
-                                    await Clipboard.setData(
-                                      ClipboardData(text: content),
-                                    );
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Post copied to clipboard',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.share_outlined),
+                                const SizedBox(height: 2),
+                                Text(
+                                  user.email,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF888888),
+                                  ),
                                 ),
                               ],
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+
+                      if (user.bio.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          user.bio,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF555555),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 14),
+
+                      // Stats row
+                      Row(
+                        children: [
+                          _StatPill(number: '2.5K', label: 'Followers'),
+                          const SizedBox(width: 12),
+                          _StatPill(number: '890', label: 'Following'),
+                          const SizedBox(width: 12),
+                          _StatPill(number: '-', label: 'Posts'),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Action buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () =>
+                                  Navigator.pushNamed(context, '/edit_profile'),
+                              icon: const Icon(Icons.edit_rounded, size: 16),
+                              label: const Text('Edit Profile'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _gold,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: () => _shareProfile(user),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: _gold),
+                              foregroundColor: _gold,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                                horizontal: 16,
+                              ),
+                            ),
+                            child: const Icon(Icons.share_rounded, size: 18),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Create Post bar ───────────────────────────────────────
+              SliverToBoxAdapter(
+                child: GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, '/create_post'),
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    color: Colors.white,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFE8D5B7),
+                            border: Border.all(
+                              color: _gold.withOpacity(0.35),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: user.avatarUrl.isNotEmpty
+                              ? ClipOval(
+                                  child: Image.network(
+                                    user.avatarUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.person,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.person,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 11,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF4F4F4),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: const Color(0xFFEEEEEE),
+                              ),
+                            ),
+                            child: const Text(
+                              'Share your testimony...',
+                              style: TextStyle(
+                                color: Color(0xFFAAAAAA),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            color: _goldLight.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.photo_camera_outlined,
+                            color: _gold,
+                            size: 20,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Posts header ──────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                  child: const Text(
+                    'Posts',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2C2C2C),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Posts list (real-time stream) ─────────────────────────
+              StreamBuilder<List<Post>>(
+                stream: PostService.instance.streamPostsForUser(user.id),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: CircularProgressIndicator(color: _gold),
                         ),
                       ),
+                    );
+                  }
+                  if (snap.hasError) {
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(
+                            'Failed to load posts',
+                            style: const TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final posts = snap.data ?? [];
+                  if (posts.isEmpty) {
+                    return SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 32,
+                          horizontal: 24,
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 70,
+                                height: 70,
+                                decoration: BoxDecoration(
+                                  color: _goldLight.withOpacity(0.4),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.article_outlined,
+                                  size: 32,
+                                  color: _gold,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              const Text(
+                                'No posts yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF444444),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Share your first testimony!',
+                                style: TextStyle(
+                                  color: Color(0xFF888888),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _ProfilePostCard(
+                        post: posts[index],
+                        user: user,
+                        onRefresh: () {},
+                      ),
+                      childCount: posts.length,
                     ),
                   );
-                }, childCount: posts.length),
+                },
               ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
           );
         },
       ),
     );
   }
+
+  Widget _avatarFallback(AuthUser user) {
+    return Container(
+      color: const Color(0xFFE8D5B7),
+      child: Center(
+        child: Text(
+          user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+          style: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _StatColumn extends StatelessWidget {
+// ─── Default Banner ───────────────────────────────────────────────────────────
+class _DefaultBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_gold, _goldLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.landscape, size: 72, color: Colors.white70),
+      ),
+    );
+  }
+}
+
+// ─── Stat Pill ────────────────────────────────────────────────────────────────
+class _StatPill extends StatelessWidget {
   final String number;
   final String label;
-
-  const _StatColumn({required this.number, required this.label});
+  const _StatPill({required this.number, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -936,52 +684,432 @@ class _StatColumn extends StatelessWidget {
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF333333),
+            color: Color(0xFF2C2C2C),
           ),
         ),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: Color(0xFF888888)),
+          style: const TextStyle(fontSize: 11, color: Color(0xFF888888)),
         ),
       ],
     );
   }
 }
 
-class _ReactionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final int count;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _ReactionButton({
-    required this.label,
-    required this.icon,
-    required this.count,
-    required this.active,
-    required this.onTap,
+// ─── Profile Post Card ────────────────────────────────────────────────────────
+class _ProfilePostCard extends StatefulWidget {
+  final Post post;
+  final AuthUser user;
+  final VoidCallback onRefresh;
+  const _ProfilePostCard({
+    required this.post,
+    required this.user,
+    required this.onRefresh,
   });
 
   @override
+  State<_ProfilePostCard> createState() => _ProfilePostCardState();
+}
+
+class _ProfilePostCardState extends State<_ProfilePostCard> {
+  bool _showPicker = false;
+  bool _saved = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+  }
+
+  Future<void> _loadSaved() async {
+    final u = AuthService.instance.currentUser.value;
+    if (u == null) return;
+    try {
+      final s = await PostService.instance.isSaved(widget.post.id, u.id);
+      if (mounted) setState(() => _saved = s);
+    } catch (_) {}
+  }
+
+  String? get _myReaction {
+    final u = AuthService.instance.currentUser.value;
+    if (u == null) return null;
+    for (final e in widget.post.reactions.entries) {
+      if (e.value.contains(u.id)) return e.key;
+    }
+    return null;
+  }
+
+  static const _reactionDefs = [
+    ('amen', 'Amen', Icons.thumb_up, Color(0xFFD4AF37)),
+    ('pray', 'Pray', Icons.pan_tool, Color(0xFF8B9DC3)),
+    ('worship', 'Worship', Icons.music_note, Color(0xFF9ACD32)),
+    ('love', 'Love', Icons.favorite, Color(0xFFE57373)),
+  ];
+
+  String _fmt(String ts) {
+    try {
+      final dt = DateTime.parse(ts).toLocal();
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 1) return 'Just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays < 7) return '${diff.inDays}d ago';
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return ts;
+    }
+  }
+
+  Future<void> _react(String key) async {
+    if (_busy) return;
+    final u = AuthService.instance.currentUser.value;
+    if (u == null) return;
+    setState(() {
+      _busy = true;
+      _showPicker = false;
+    });
+    try {
+      await PostService.instance.toggleReaction(widget.post.id, key, u.id);
+      widget.onRefresh();
+    } catch (_) {}
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _toggleSave() async {
+    final u = AuthService.instance.currentUser.value;
+    if (u == null) return;
+    setState(() => _saved = !_saved);
+    try {
+      await PostService.instance.toggleSave(widget.post.id, u.id);
+    } catch (_) {
+      if (mounted) setState(() => _saved = !_saved);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final color = active ? Theme.of(context).colorScheme.primary : Colors.grey;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(24),
+    final myReaction = _myReaction;
+    final totalReactions = widget.post.reactions.values.fold<int>(
+      0,
+      (s, l) => s + l.length,
+    );
+
+    return GestureDetector(
+      onTap: () {
+        if (_showPicker) setState(() => _showPicker = false);
+      },
+      behavior: HitTestBehavior.translucent,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? color.withOpacity(0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Row(
+        margin: const EdgeInsets.only(top: 6),
+        color: Colors.white,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 8),
-            Text(
-              count > 0 ? '$label ($count)' : label,
-              style: TextStyle(color: color),
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 6, 0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE8D5B7),
+                      border: Border.all(
+                        color: _gold.withOpacity(0.35),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: ClipOval(
+                      child: widget.user.avatarUrl.isNotEmpty
+                          ? Image.network(
+                              widget.user.avatarUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.user.name.isNotEmpty
+                              ? widget.user.name
+                              : widget.user.email,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14.5,
+                            color: Color(0xFF2C2C2C),
+                          ),
+                        ),
+                        Text(
+                          _fmt(widget.post.timestamp),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF999999),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Builder(
+                    builder: (ctx) {
+                      final current = AuthService.instance.currentUser.value;
+                      final isOwner =
+                          current != null && current.id == widget.post.authorId;
+                      return PopupMenuButton<String>(
+                        icon: const Icon(
+                          Icons.more_horiz,
+                          color: Color(0xFFAAAAAA),
+                        ),
+                        onSelected: (v) async {
+                          if (v == 'delete') {
+                            final ok = await showDialog<bool>(
+                              context: ctx,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Delete post?'),
+                                content: const Text('This cannot be undone.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (ok == true) {
+                              try {
+                                await PostService.instance.deletePost(
+                                  widget.post.id,
+                                );
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Post deleted'),
+                                    backgroundColor: _gold,
+                                  ),
+                                );
+                              } catch (_) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to delete post'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          if (isOwner)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete'),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            if (widget.post.content.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Text(
+                  widget.post.content,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    height: 1.55,
+                    color: Color(0xFF3A3A3A),
+                  ),
+                ),
+              ),
+
+            // Shared post card (embedded original post)
+            if (widget.post.isSharedPost)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: SharedPostPreview(
+                  authorEmail: widget.post.sharedAuthorEmail ?? '',
+                  authorAvatarUrl: widget.post.sharedAuthorAvatarUrl ?? '',
+                  content: widget.post.sharedContent ?? '',
+                  mediaUrl: widget.post.sharedMediaUrl,
+                  mediaType: widget.post.sharedMediaType,
+                ),
+              ),
+
+            // Media (only for non-shared posts)
+            if (!widget.post.isSharedPost &&
+                widget.post.mediaUrl != null &&
+                widget.post.mediaUrl!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Image.network(
+                  widget.post.mediaUrl!,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                ),
+              ),
+
+            // Reaction summary
+            if (totalReactions > 0 || widget.post.comments.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: [
+                    if (totalReactions > 0) ...[
+                      ...widget.post.reactions.entries
+                          .where((e) => e.value.isNotEmpty)
+                          .take(3)
+                          .map((entry) {
+                            final def = _reactionDefs.firstWhere(
+                              (d) => d.$1 == entry.key,
+                              orElse: () => _reactionDefs[0],
+                            );
+                            return Container(
+                              margin: const EdgeInsets.only(right: 1),
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                color: def.$4.withOpacity(0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(def.$3, size: 12, color: def.$4),
+                            );
+                          }),
+                      const SizedBox(width: 5),
+                      Text(
+                        '$totalReactions',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF888888),
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
+                    if (widget.post.comments.isNotEmpty)
+                      Text(
+                        '${widget.post.comments.length} comment${widget.post.comments.length != 1 ? "s" : ""}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF888888),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+            const Padding(
+              padding: EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: Divider(
+                height: 1,
+                thickness: 0.8,
+                color: Color(0xFFEEEEEE),
+              ),
+            ),
+
+            // Action row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_showPicker)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+                      child: _ProfileReactionPicker(
+                        myReaction: myReaction,
+                        onReact: _react,
+                      ),
+                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      // React
+                      _ProfileActionBtn(
+                        icon: myReaction != null
+                            ? _reactionDefs
+                                  .firstWhere(
+                                    (d) => d.$1 == myReaction,
+                                    orElse: () => _reactionDefs[0],
+                                  )
+                                  .$3
+                            : Icons.thumb_up_outlined,
+                        label: myReaction != null
+                            ? _reactionDefs
+                                  .firstWhere(
+                                    (d) => d.$1 == myReaction,
+                                    orElse: () => _reactionDefs[0],
+                                  )
+                                  .$2
+                            : 'React',
+                        color: myReaction != null
+                            ? _reactionDefs
+                                  .firstWhere(
+                                    (d) => d.$1 == myReaction,
+                                    orElse: () => _reactionDefs[0],
+                                  )
+                                  .$4
+                            : null,
+                        onTap: () => setState(() => _showPicker = !_showPicker),
+                      ),
+                      // Comment
+                      _ProfileActionBtn(
+                        icon: Icons.chat_bubble_outline_rounded,
+                        label: 'Comment',
+                        onTap: () => showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => CommentsSheet(
+                            post: widget.post,
+                            onCommentAdded: widget.onRefresh,
+                          ),
+                        ),
+                      ),
+                      // Share
+                      _ProfileActionBtn(
+                        icon: Icons.share_outlined,
+                        label: 'Share',
+                        onTap: () => showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => ShareSheet(post: widget.post),
+                        ),
+                      ),
+                      // Save
+                      _ProfileActionBtn(
+                        icon: _saved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        label: 'Save',
+                        color: _saved ? _gold : null,
+                        onTap: _toggleSave,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -990,102 +1118,112 @@ class _ReactionButton extends StatelessWidget {
   }
 }
 
-class _CommentsSheet extends StatefulWidget {
-  final String postId;
-  const _CommentsSheet({required this.postId});
-  @override
-  State<_CommentsSheet> createState() => _CommentsSheetState();
-}
+// ─── Profile Reaction Picker ──────────────────────────────────────────────────
+class _ProfileReactionPicker extends StatelessWidget {
+  final String? myReaction;
+  final ValueChanged<String> onReact;
+  const _ProfileReactionPicker({
+    required this.myReaction,
+    required this.onReact,
+  });
 
-class _CommentsSheetState extends State<_CommentsSheet> {
-  final TextEditingController _ctrl = TextEditingController();
-  List<Comment> _comments = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadComments();
-  }
-
-  Future<void> _loadComments() async {
-    final p = await PostService.instance.getById(widget.postId);
-    if (!mounted) return;
-    setState(() => _comments = p?.comments ?? []);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  static const _defs = [
+    ('amen', 'Amen', Icons.thumb_up, Color(0xFFD4AF37)),
+    ('pray', 'Pray', Icons.pan_tool, Color(0xFF8B9DC3)),
+    ('worship', 'Worship', Icons.music_note, Color(0xFF9ACD32)),
+    ('love', 'Love', Icons.favorite, Color(0xFFE57373)),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 12,
-        right: 12,
-        top: 12,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            height: 220,
-            child: _comments.isEmpty
-                ? const Center(child: Text('No comments yet'))
-                : ListView.separated(
-                    itemCount: _comments.length,
-                    separatorBuilder: (_, __) => const Divider(),
-                    itemBuilder: (ctx, i) {
-                      final c = _comments[i];
-                      return ListTile(
-                        title: Text(c.author),
-                        subtitle: Text(c.text),
-                      );
-                    },
-                  ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _ctrl,
-                  decoration: const InputDecoration(
-                    hintText: 'Write a comment',
-                  ),
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(40),
+      shadowColor: Colors.black.withOpacity(0.15),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(40),
+          border: Border.all(color: const Color(0xFFEEEEEE)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: _defs.map((d) {
+            final isActive = myReaction == d.$1;
+            return GestureDetector(
+              onTap: () => onReact(d.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isActive ? d.$4.withOpacity(0.15) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(24),
+                  border: isActive
+                      ? Border.all(color: d.$4.withOpacity(0.4))
+                      : null,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(d.$3, size: 24, color: d.$4),
+                    const SizedBox(height: 3),
+                    Text(
+                      d.$2,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: d.$4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: () async {
-                  final text = _ctrl.text.trim();
-                  if (text.isEmpty) return;
-                  final user = AuthService.instance.currentUser.value;
-                  if (user == null) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Login to comment')),
-                    );
-                    return;
-                  }
-                  await PostService.instance.addComment(
-                    widget.postId,
-                    user.id,
-                    user.email,
-                    text,
-                  );
-                  _ctrl.clear();
-                  await _loadComments();
-                },
-                child: const Text('Send'),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Profile Action Button ────────────────────────────────────────────────────
+class _ProfileActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? color;
+  const _ProfileActionBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? const Color(0xFF888888);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: c),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: c,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
